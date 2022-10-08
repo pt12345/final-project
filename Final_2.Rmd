@@ -1,7 +1,7 @@
 ---
-title: "COVID-19 Analysis"
+title: "COVID-19 Data Analysis"
 author: "Peter Tarara"
-date: "2022-`10-08"
+date: "2022-10-08"
 output:
   pdf_document: default
   html_document: default
@@ -17,7 +17,9 @@ library(lubridate)
 
 ```{r import, echo=TRUE}
 url_in <- 
-  "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+  paste0("https://raw.githubusercontent.com/",
+         "CSSEGISandData/COVID-19/master/",
+         "csse_covid_19_data/csse_covid_19_time_series/")
 
 file_names <-
   c("time_series_covid19_confirmed_global.csv",
@@ -32,8 +34,6 @@ global_deaths <- read_csv(urls[2])
 us_cases <- read_csv(urls[3])
 us_deaths <- read_csv(urls[4])
 
-#global_cases <- global_cases %>% select(-c(UID,iso2,iso3,code3,FIPS,Admin2,Combined_Key))
-
 global_cases <- global_cases %>%
      pivot_longer(cols = -c(`Province/State`,
                             `Country/Region`, Lat, Long),
@@ -47,9 +47,6 @@ global_deaths <- global_deaths %>%
                names_to = "date",
                values_to = "deaths") %>%
   select(-c(Lat, Long))
-
-#global_deaths <- global_deaths %>% rename(`Country_Region` = `Country/Region`)
-#global_deaths <- global_deaths %>% rename(`Province_State` = `Province/State`)
 
 global <- global_cases %>%
   full_join(global_deaths) %>%
@@ -85,7 +82,10 @@ global <- global %>%
         na.rm = TRUE,
         remove = FALSE)
 
-uid_lookup_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv"
+uid_lookup_url <- 
+  paste0("https://raw.githubusercontent.com/",
+  "CSSEGISandData/COVID-19/master/csse_covid_",
+  "19_data/UID_ISO_FIPS_LookUp_Table.csv")
 
 uid <- read_csv(uid_lookup_url) %>%
   select(-c(Lat, Long_, Combined_Key, code3, iso2, iso3, Admin2))
@@ -108,7 +108,8 @@ US_by_state <- US %>%
   group_by(Province_State, Country_Region, date) %>%
   summarize(cases = sum(cases), deaths = sum(deaths), Population = sum(Population)) %>%
   mutate(deaths_per_mill = deaths *1000000 / Population) %>%
-  select(Province_State, Country_Region, date, cases, deaths,deaths_per_mill, Population) %>%
+  select(Province_State, Country_Region, date, cases, deaths,deaths_per_mill,
+         Population) %>%
   ungroup()
 
 US_totals <- US_by_state %>%
