@@ -1,0 +1,170 @@
+---
+title: "COVID-19 Analysis"
+author: "Peter Tarara"
+date: "2022-`10-08"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(lubridate)
+```
+
+## Data Summary and Tidying
+
+```{r import, echo=TRUE}
+url_in <- 
+  "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+file_names <-
+  c("time_series_covid19_confirmed_global.csv",
+    "time_series_covid19_deaths_global.csv",
+    "time_series_covid19_confirmed_US.csv",
+    "time_series_covid19_deaths_US.csv")
+
+urls <- str_c(url_in, file_names)
+
+global_cases <- read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+us_cases <- read_csv(urls[3])
+us_deaths <- read_csv(urls[4])
+
+#global_cases <- global_cases %>% select(-c(UID,iso2,iso3,code3,FIPS,Admin2,Combined_Key))
+
+global_cases <- global_cases %>%
+     pivot_longer(cols = -c(`Province/State`,
+                            `Country/Region`, Lat, Long),
+                  names_to = "date",
+                  values_to = "cases") %>% 
+  select(-c(Lat,Long))
+
+
+global_deaths <- global_deaths %>%
+  pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long),
+               names_to = "date",
+               values_to = "deaths") %>%
+  select(-c(Lat, Long))
+
+#global_deaths <- global_deaths %>% rename(`Country_Region` = `Country/Region`)
+#global_deaths <- global_deaths %>% rename(`Province_State` = `Province/State`)
+
+global <- global_cases %>%
+  full_join(global_deaths) %>%
+  mutate(date = mdy(date))
+
+global <- global %>% filter(cases > 0) #issue with this filter
+
+summary(global)
+
+us_cases <- us_cases %>%
+  pivot_longer(cols = -(UID:Combined_Key),
+               names_to = "date",
+               values_to = "cases") %>%
+  select(Admin2:cases) %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat, Long_))
+
+us_deaths <- us_deaths %>%
+  pivot_longer(cols = -(UID:Population),
+               names_to = "date",
+               values_to = "deaths") %>%
+  select(Admin2:deaths) %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat, Long_))
+
+US <- us_cases %>%
+  full_join(us_deaths)
+
+global <- global %>%
+  unite("Combined_Key",
+        c(`Province/State`, `Country/Region`),
+        sep = ", ",
+        na.rm = TRUE,
+        remove = FALSE)
+
+uid_lookup_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv"
+
+uid <- read_csv(uid_lookup_url) %>%
+  select(-c(Lat, Long_, Combined_Key, code3, iso2, iso3, Admin2))
+
+
+global <- global %>% rename(`Country_Region` = `Country/Region`)
+global <- global %>% rename(`Province_State` = `Province/State`)
+
+global <- global %>%
+  left_join(uid, by = c("Province_State", "Country_Region")) %>%
+  select(-c(UID, FIPS)) %>%
+  select(Province_State, Country_Region, date, cases, deaths, Population, Combined_Key)
+```
+
+
+## Visuals
+
+```{r visuals, echo=TRUE}
+US_by_state <- US %>%
+  group_by(Province_State, Country_Region, date) %>%
+  summarize(cases = sum(cases), deaths = sum(deaths), Population = sum(Population)) %>%
+  mutate(deaths_per_mill = deaths *1000000 / Population) %>%
+  select(Province_State, Country_Region, date, cases, deaths,deaths_per_mill, Population) %>%
+  ungroup()
+
+US_totals <- US_by_state %>%
+  group_by(Country_Region, date) %>%
+  summarize(cases = sum(cases), deaths = sum(deaths), Population = sum(Population)) %>%
+  mutate(deaths_per_mill = deaths *1000000 / Population) %>%
+  select(Country_Region, date, cases, deaths, deaths_per_mill, Population) %>%
+  ungroup()
+
+US_state_totals <-US_by_state %>%
+  group_by(Province_State) %>%
+  summarize(deaths = max(deaths), cases = max(cases), Population = max(Population)) %>%
+  filter(cases > 0, Population > 0)
+
+
+US_state_totals %>%
+  mutate(Province_State = fct_reorder(Province_State, cases)) %>%
+  filter(cases > 0) %>%
+  ggplot(aes(x=Province_State, y=cases)) +
+  geom_bar(stat="identity") +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "COVID19 Cases by State")
+
+
+US_state_totals %>%
+  mutate(Province_State = fct_reorder(Province_State, cases)) %>%
+  filter(cases > 0) %>%
+  ggplot(aes(x=Province_State, y=Population)) +
+  geom_bar(stat="identity") +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "Population by State")
+
+```
+
+## Anaylsis
+
+When comparing the above two charts, it appears that the population count of a state is useful for predicting the total number of COVID cases. Although this is an obvious observation, I was curious to see if any outliers could raise more questions, such as a clear difference between states with various approaches to virus containment. To test this theory, I used a linear model to visualize the relationship between population and the number of COVID cases.
+
+## Model
+
+```{r model, echo=TRUE}
+mod <- lm(cases ~ Population, data = US_state_totals)
+
+US_state_totals %>% mutate(pred = predict(mod))
+
+US_state_totals_w_pred <- US_state_totals %>% mutate(pred = predict(mod))
+
+US_state_totals_w_pred %>% ggplot() +
+geom_point(aes(x= Population, y = cases), color = "blue") +
+ geom_point(aes(x= Population, y = pred), color = "red")
+```
+
+## Conclusion and Bias
+
+In the above chart, the red dots are the predictions, and the blue dots are the actual values. Based on this model, I believe it is fair to conclude that population is a valuable predictor of the total number of COVID cases per state.
+
+My bias for this analysis would be my expectation that a greater population would lead to a higher number of COVID cases.
