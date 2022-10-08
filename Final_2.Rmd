@@ -13,6 +13,10 @@ library(tidyverse)
 library(lubridate)
 ```
 
+## Data Source
+
+I will be using data from the COVID-19 Data Repository by the Center for Systems Science and Engineering (CSSE) at Johns Hopkins University for my analysis. The repository contains data related to COVID cases and can be found here: https://github.com/CSSEGISandData/COVID-19
+
 ## Data Summary and Tidying
 
 ```{r import, echo=TRUE}
